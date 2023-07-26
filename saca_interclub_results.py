@@ -89,16 +89,24 @@ player_df['Result'] = player_df['Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5
 player_df['Rating'] = pd.to_numeric(player_df['Rating'], errors='coerce')
 player_df['Opponent Rating'] = pd.to_numeric(player_df['Opponent Rating'], errors='coerce')
 
-# calculate average opponent rating, total score, and total games for each player
-player_avg_opponent_rating = player_df.groupby('Player')['Opponent Rating'].mean().round(0)  
-player_total_score = player_df.groupby('Player')['Result'].sum()
-player_total_games = player_df.groupby('Player')['Result'].count()  
+# Create a separate DataFrame for calculating average opponent rating
+rated_players_df = player_df[player_df['Rating'] != 0]
 
-# combine results into one dataframe
-player_performance = pd.concat([player_avg_opponent_rating, player_total_score, player_total_games], axis=1)
+# Calculate average opponent rating for rated players
+player_avg_opponent_rating = rated_players_df.groupby('Player')['Opponent Rating'].mean().round(0)  
+
+# Calculate total score and total games for all players
+player_total_score = player_df.groupby('Player')['Result'].sum()
+player_total_games = player_df.groupby('Player')['Result'].count() 
+
+# Combine results into one dataframe. Use outer join to ensure all players are included.
+player_performance = pd.concat([player_avg_opponent_rating, player_total_score, player_total_games], axis=1, join='outer')
 player_performance.columns = ['Avg Opp Rtg', 'Total Score', 'Total Games']
 
-# sort the dataframe by 'Total Score' in descending order
+# For players with no rating, fill the 'Avg Opp Rtg' field with NaN or another value
+player_performance['Avg Opp Rtg'].fillna('NaN', inplace=True)
+
+# Sort the dataframe by 'Total Score' in descending order
 player_performance = player_performance.sort_values('Total Score', ascending=False)
 
 print(player_performance)
