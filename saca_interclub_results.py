@@ -65,6 +65,9 @@ team_df = pd.concat([team1_df, team2_df])
 # calculate total score for each team
 team_total_score = team_df.groupby('Team')['Score'].sum()
 
+# Sort the scores in descending order
+team_total_score = team_total_score.sort_values(ascending=False)
+
 print(team_total_score)
 
 # split the data into two separate dataframes based on the player's team
