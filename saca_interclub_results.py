@@ -2,108 +2,113 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
-# send the request
-response = requests.get('https://sachess.org.au/interclub-teams-tournament-2023-results/')
-soup = BeautifulSoup(response.text, 'html.parser')
+def get_soup(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    return soup
 
-# find all the tables
-tables = soup.find_all('table')[11:]  # we're only interested in tables from 12th onward
+def extract_tables(soup):
+    tables = soup.find_all('table')[11:]
+    return tables
 
-matches = []
-data = []
+def extract_data(tables):
+    matches = []
+    data = []
 
-# loop through tables
-for i, table in enumerate(tables):
-    
-    # get match metadata
-    metadata_rows = table.find_all('thead')
-    for metadata_row in metadata_rows:
-        metadata_cols = metadata_row.find_all('th')
-        metadata_cols = [col.text.strip() for col in metadata_cols]
-        matches.append(metadata_cols)
+    for table in tables:
+        metadata_rows = table.find_all('thead')
+        for metadata_row in metadata_rows:
+            metadata_cols = metadata_row.find_all('th')
+            metadata_cols = [col.text.strip() for col in metadata_cols]
+            matches.append(metadata_cols)
 
-    # get match data
-    rows = table.find('tbody').find_all('tr')
-    for row in rows:
-        cols = row.find_all('td')
-        cols = [col.text.strip() for col in cols]
-        data.append(cols)
+        rows = table.find('tbody').find_all('tr')
+        for row in rows:
+            cols = row.find_all('td')
+            cols = [col.text.strip() for col in cols]
+            data.append(cols)
 
-# convert lists to dataframes
-metadata_df = pd.DataFrame(matches, columns=['Match Number', 'Team 1 Rating', 'Team 1', 'Team 1 Score', 'Team 2 Score', 'Team 2', 'Team 2 Rating'])
-data_df = pd.DataFrame(data, columns=['Table Number', 'Team 1 Rating', 'Team 1 Player', 'Team 1 Result', 'Team 2 Result', 'Team 2 Player', 'Team 2 Rating'])
+    return matches, data
 
-# drop any rows with missing data
-metadata_df = metadata_df.dropna()
-data_df = data_df.dropna()
+def create_dataframes(matches, data):
+    metadata_df = pd.DataFrame(matches, columns=['Match Number', 'Team 1 Rating', 'Team 1', 'Team 1 Score', 'Team 2 Score', 'Team 2', 'Team 2 Rating'])
+    data_df = pd.DataFrame(data, columns=['Table Number', 'Team 1 Rating', 'Team 1 Player', 'Team 1 Result', 'Team 2 Result', 'Team 2 Player', 'Team 2 Rating'])
 
-# print some of the data
-print(metadata_df.head(20))
-print(data_df.head(20))
+    metadata_df = metadata_df.dropna()
+    data_df = data_df.dropna()
 
-# get rid of columns we don't need
-metadata_df = metadata_df.drop(['Team 1 Rating', 'Team 2 Rating'], axis=1)
+    return metadata_df, data_df
 
-# convert result columns to numeric
-data_df['Team 1 Result'] = data_df['Team 1 Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5}).astype(float)
-data_df['Team 2 Result'] = data_df['Team 2 Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5}).astype(float)
+def process_data(metadata_df, data_df):
+    metadata_df = metadata_df.drop(['Team 1 Rating', 'Team 2 Rating'], axis=1)
 
-# convert team score columns to numeric
-metadata_df['Team 1 Score'] = pd.to_numeric(metadata_df['Team 1 Score'], errors='coerce')
-metadata_df['Team 2 Score'] = pd.to_numeric(metadata_df['Team 2 Score'], errors='coerce')
+    data_df['Team 1 Result'] = data_df['Team 1 Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5}).astype(float)
+    data_df['Team 2 Result'] = data_df['Team 2 Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5}).astype(float)
 
-# split the metadata into two separate dataframes based on the team
-team1_df = metadata_df[['Match Number', 'Team 1', 'Team 1 Score']].copy()
-team1_df.columns = ['Match Number', 'Team', 'Score']
+    metadata_df['Team 1 Score'] = pd.to_numeric(metadata_df['Team 1 Score'], errors='coerce')
+    metadata_df['Team 2 Score'] = pd.to_numeric(metadata_df['Team 2 Score'], errors='coerce')
 
-team2_df = metadata_df[['Match Number', 'Team 2', 'Team 2 Score']].copy()
-team2_df.columns = ['Match Number', 'Team', 'Score']
+    return metadata_df, data_df
 
-# join the two dataframes
-team_df = pd.concat([team1_df, team2_df])
+def calculate_team_scores(metadata_df):
+    team1_df = metadata_df[['Match Number', 'Team 1', 'Team 1 Score']].copy()
+    team1_df.columns = ['Match Number', 'Team', 'Score']
 
-# calculate total score for each team
-team_total_score = team_df.groupby('Team')['Score'].sum()
+    team2_df = metadata_df[['Match Number', 'Team 2', 'Team 2 Score']].copy()
+    team2_df.columns = ['Match Number', 'Team', 'Score']
 
-# Sort the scores in descending order
-team_total_score = team_total_score.sort_values(ascending=False)
+    team_df = pd.concat([team1_df, team2_df])
 
-print(team_total_score)
+    team_total_score = team_df.groupby('Team')['Score'].sum()
 
-# split the data into two separate dataframes based on the player's team
-team1_df = data_df[['Table Number', 'Team 1 Rating', 'Team 1 Player', 'Team 1 Result']].copy()
-team1_df.columns = ['Table Number', 'Rating', 'Player', 'Result']
-team1_df['Opponent Rating'] = data_df['Team 2 Rating']
+    team_total_score = team_total_score.sort_values(ascending=False)
 
-team2_df = data_df[['Table Number', 'Team 2 Rating', 'Team 2 Player', 'Team 2 Result']].copy()
-team2_df.columns = ['Table Number', 'Rating', 'Player', 'Result']
-team2_df['Opponent Rating'] = data_df['Team 1 Rating']
+    return team_total_score
 
-# join the two dataframes
-player_df = pd.concat([team1_df, team2_df])
+def calculate_player_performance(data_df):
+    team1_df = data_df[['Table Number', 'Team 1 Rating', 'Team 1 Player', 'Team 1 Result']].copy()
+    team1_df.columns = ['Table Number', 'Rating', 'Player', 'Result']
+    team1_df['Opponent Rating'] = data_df['Team 2 Rating']
 
-# convert the 'Result' column to numeric
-player_df['Result'] = player_df['Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5}).astype(float)
+    team2_df = data_df[['Table Number', 'Team 2 Rating', 'Team 2 Player', 'Team 2 Result']].copy()
+    team2_df.columns = ['Table Number', 'Rating', 'Player', 'Result']
+    team2_df['Opponent Rating'] = data_df['Team 1 Rating']
 
-# convert the 'Rating' and 'Opponent Rating' columns to numeric
-player_df['Rating'] = pd.to_numeric(player_df['Rating'], errors='coerce')
-player_df['Opponent Rating'] = pd.to_numeric(player_df['Opponent Rating'], errors='coerce')
+    player_df = pd.concat([team1_df, team2_df])
 
-# Create a separate DataFrame excluding the games where the opponent's rating is 0
-rated_games_df = player_df[player_df['Opponent Rating'] != 0]
+    player_df['Result'] = player_df['Result'].replace({'1 F': 1, '0 F': 0, '½': 0.5}).astype(float)
 
-# Calculate average opponent rating from rated_games_df
-player_avg_opponent_rating = rated_games_df.groupby('Player')['Opponent Rating'].mean().round(0)
+    player_df['Rating'] = pd.to_numeric(player_df['Rating'], errors='coerce')
+    player_df['Opponent Rating'] = pd.to_numeric(player_df['Opponent Rating'], errors='coerce')
 
-# Calculate total score and total games for all players
-player_total_score = player_df.groupby('Player')['Result'].sum()
-player_total_games = player_df.groupby('Player')['Result'].count()
+    rated_games_df = player_df[player_df['Opponent Rating'] != 0]
 
-# Combine results into one dataframe. Use outer join to ensure all players are included.
-player_performance = pd.concat([player_avg_opponent_rating, player_total_score, player_total_games], axis=1, join='outer')
-player_performance.columns = ['Avg Opp Rtg', 'Total Score', 'Total Games']
+    player_avg_opponent_rating = rated_games_df.groupby('Player')['Opponent Rating'].mean().round(0)
 
-# Sort the dataframe by 'Total Score' in descending order
-player_performance = player_performance.sort_values('Total Score', ascending=False)
+    player_total_score = player_df.groupby('Player')['Result'].sum()
+    player_total_games = player_df.groupby('Player')['Result'].count()
 
-print(player_performance)
+    player_performance = pd.concat([player_avg_opponent_rating, player_total_score, player_total_games], axis=1, join='outer')
+    player_performance.columns = ['Avg Opp Rtg', 'Total Score', 'Total Games']
+
+    player_performance = player_performance.sort_values('Total Score', ascending=False)
+
+    return player_performance
+
+def main():
+    url = 'https://sachess.org.au/interclub-teams-tournament-2023-results/'
+    soup = get_soup(url)
+    tables = extract_tables(soup)
+    matches, data = extract_data(tables)
+    metadata_df, data_df = create_dataframes(matches, data)
+    metadata_df, data_df = process_data(metadata_df, data_df)
+
+    team_total_score = calculate_team_scores(metadata_df)
+    player_performance = calculate_player_performance(data_df)
+
+    print(team_total_score)
+    pd.set_option('display.max_rows', None)
+    print(player_performance)
+
+if __name__ == "__main__":
+    main()
