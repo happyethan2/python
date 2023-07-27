@@ -1,6 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+from collections import defaultdict
+import math
 
 def get_soup(url):
     response = requests.get(url)
@@ -95,6 +97,62 @@ def calculate_player_performance(data_df):
 
     return player_performance
 
+def calculate_elo(data_df, player_performance_df):
+    
+    # elo rating calculation
+    def elo_expected(rating1, rating2):
+        return 1 / (1 + 10 ** ((rating2 - rating1) / 400))
+
+    def elo_update(rating, expected, result, k=120):
+        if rating == 0:
+            rating = 1000
+            
+        return rating + k * (result - expected)
+
+    # Initialize ratings and results
+    ratings = {}  # We'll fill this with actual initial ratings
+    initial_ratings = {}  # We'll use this to store the initial ratings before they are updated
+    results = defaultdict(list)
+
+    # Iterate over matches
+    for idx, row in data_df.iterrows():
+        player1, player2 = row['Team 1 Player'], row['Team 2 Player']
+        
+        # Skip if player is 'BYE'
+        if player1 == 'BYE' or player2 == 'BYE':
+            continue
+
+        # Initialize player ratings if not done already
+        if player1 not in ratings:
+            initial_rating1 = pd.to_numeric(row['Team 1 Rating'], errors='coerce')
+            ratings[player1] = initial_rating1 if initial_rating1 != 0 else 0
+            initial_ratings[player1] = ratings[player1] 
+        if player2 not in ratings:
+            initial_rating2 = pd.to_numeric(row['Team 2 Rating'], errors='coerce')
+            ratings[player2] = initial_rating2 if initial_rating2 != 0 else 0
+            initial_ratings[player2] = ratings[player2] 
+            
+        rating1, rating2 = ratings[player1], ratings[player2]
+        expected1, expected2 = elo_expected(rating1, rating2), elo_expected(rating2, rating1)
+
+        # Update ratings based on match result
+        result1, result2 = row['Team 1 Result'], row['Team 2 Result']
+        ratings[player1] = elo_update(rating1, expected1, result1)
+        ratings[player2] = elo_update(rating2, expected2, result2)
+
+        # Store results for final dataframe
+        results[player1].append(ratings[player1])
+        results[player2].append(ratings[player2])
+
+    # Add initial and final Elo ratings to player performance dataframe
+    player_performance_df['Rating'] = pd.Series({player: initial_ratings[player] for player in player_performance_df.index if player in initial_ratings})
+    player_performance_df['Performance'] = pd.Series({player: round(ratings[-1]) for player, ratings in results.items()})
+    return player_performance_df
+
+
+
+
+
 def main():
     url = 'https://sachess.org.au/interclub-teams-tournament-2023-results/'
     soup = get_soup(url)
@@ -105,6 +163,7 @@ def main():
 
     team_total_score = calculate_team_scores(metadata_df)
     player_performance = calculate_player_performance(data_df)
+    player_performance = calculate_elo(data_df, player_performance)
 
     print(team_total_score)
     pd.set_option('display.max_rows', None)
